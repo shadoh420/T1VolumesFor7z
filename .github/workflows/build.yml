@@ -1,0 +1,62 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure & Build x64
+        run: |
+          cmake -S . -B build-x64 -G "Visual Studio 17 2022" -A x64
+          cmake --build build-x64 --config Release
+
+      - name: Configure & Build x86
+        run: |
+          cmake -S . -B build-x86 -G "Visual Studio 17 2022" -A Win32
+          cmake --build build-x86 --config Release
+
+      - name: Run end-to-end 7-Zip tests (x64)
+        run: |
+          python tests/test_plugin.py --dll build-x64/Release/TribesVol.64.dll
+
+      - name: Package release archive
+        shell: pwsh
+        run: |
+          $stage = "dist/T1VolumesFor7z"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item build-x64/Release/TribesVol.64.dll $stage/
+          Copy-Item build-x86/Release/TribesVol.32.dll $stage/
+          Copy-Item scripts/install.ps1 $stage/
+          Copy-Item scripts/uninstall.ps1 $stage/
+          Copy-Item README.md $stage/
+          Copy-Item LICENSE $stage/
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/T1VolumesFor7z-windows.zip" -Force
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: T1VolumesFor7z-windows
+          path: |
+            dist/T1VolumesFor7z-windows.zip
+            build-x64/Release/TribesVol.64.dll
+            build-x86/Release/TribesVol.32.dll
+
+      - name: Publish GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/T1VolumesFor7z-windows.zip
+            build-x64/Release/TribesVol.64.dll
+            build-x86/Release/TribesVol.32.dll

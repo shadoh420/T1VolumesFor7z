@@ -1,0 +1,10 @@
+build*/
+dist/
+out/
+.vs/
+*.user
+*.suo
+*.pdb
+*.ilk
+__pycache__/
+*.pyc

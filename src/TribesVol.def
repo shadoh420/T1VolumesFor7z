@@ -1,0 +1,7 @@
+EXPORTS
+    CreateObject
+    GetHandlerProperty
+    GetHandlerProperty2
+    GetNumberOfFormats
+    GetIsArc
+    GetModuleProp
