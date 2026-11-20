@@ -49,8 +49,8 @@ jobs:
           name: T1VolumesFor7z-windows
           path: |
             dist/T1VolumesFor7z-windows.zip
-            build-x64/Release/TribesVol.64.dll
-            build-x86/Release/TribesVol.32.dll
+            dist/T1VolumesFor7z/TribesVol.64.dll
+            dist/T1VolumesFor7z/TribesVol.32.dll
 
   build-linux:
     runs-on: ubuntu-latest
@@ -87,7 +87,7 @@ jobs:
           name: T1VolumesFor7z-linux-x64
           path: |
             dist/T1VolumesFor7z-linux-x64.tar.gz
-            build/TribesVol.so
+            dist/T1VolumesFor7z-linux-x64/TribesVol.so
 
   release:
     needs: [ build-windows, build-linux ]
@@ -104,8 +104,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/T1VolumesFor7z-windows.zip
-            artifacts/TribesVol.64.dll
-            artifacts/TribesVol.32.dll
-            artifacts/T1VolumesFor7z-linux-x64.tar.gz
-            artifacts/TribesVol.so
+            artifacts/**/*.zip
+            artifacts/**/*.dll
+            artifacts/**/*.tar.gz
+            artifacts/**/*.so
