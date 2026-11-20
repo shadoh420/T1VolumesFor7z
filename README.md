@@ -84,10 +84,10 @@ As an alternative, delete `TribesVol.*.dll` from the 7-Zip `Formats` folder.
 Install Visual Studio 2022 with C++ tools and CMake 3.20 or newer. Then run these commands:
 
 ```powershell
-cmake -S . -B build-x64 -G "Visual Studio 17 2022" -A x64
+cmake -S . -B build-x64 -A x64
 cmake --build build-x64 --config Release
 
-cmake -S . -B build-x86 -G "Visual Studio 17 2022" -A Win32
+cmake -S . -B build-x86 -A Win32
 cmake --build build-x86 --config Release
 
 python tests/test_plugin.py --dll build-x64/Release/TribesVol.64.dll

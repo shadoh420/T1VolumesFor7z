@@ -18,12 +18,12 @@ jobs:
 
       - name: Configure & Build x64
         run: |
-          cmake -S . -B build-x64 -G "Visual Studio 17 2022" -A x64
+          cmake -S . -B build-x64 -A x64
           cmake --build build-x64 --config Release
 
       - name: Configure & Build x86
         run: |
-          cmake -S . -B build-x86 -G "Visual Studio 17 2022" -A Win32
+          cmake -S . -B build-x86 -A Win32
           cmake --build build-x86 --config Release
 
       - name: Run end-to-end 7-Zip tests (x64)
