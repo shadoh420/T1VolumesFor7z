@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -26,11 +26,11 @@ jobs:
           cmake -S . -B build-x86 -A Win32
           cmake --build build-x86 --config Release
 
-      - name: Run end-to-end 7-Zip tests (x64)
+      - name: Run end-to-end 7-Zip tests (Windows x64)
         run: |
           python tests/test_plugin.py --dll build-x64/Release/TribesVol.64.dll
 
-      - name: Package release archive
+      - name: Package Windows release archive
         shell: pwsh
         run: |
           $stage = "dist/T1VolumesFor7z"
@@ -43,7 +43,7 @@ jobs:
           Copy-Item LICENSE $stage/
           Compress-Archive -Path "$stage/*" -DestinationPath "dist/T1VolumesFor7z-windows.zip" -Force
 
-      - name: Upload build artifacts
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: T1VolumesFor7z-windows
@@ -52,11 +52,60 @@ jobs:
             build-x64/Release/TribesVol.64.dll
             build-x86/Release/TribesVol.32.dll
 
-      - name: Publish GitHub Release on tag
-        if: startsWith(github.ref, 'refs/tags/v')
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install modular 7zip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y 7zip
+
+      - name: Configure & Build Linux x64
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+      - name: Run end-to-end 7-Zip tests (Linux x64)
+        run: |
+          python3 tests/test_plugin.py --dll build/TribesVol.so
+
+      - name: Package Linux release archive
+        run: |
+          mkdir -p dist/T1VolumesFor7z-linux-x64
+          cp build/TribesVol.so dist/T1VolumesFor7z-linux-x64/
+          cp scripts/install.sh scripts/uninstall.sh dist/T1VolumesFor7z-linux-x64/
+          chmod +x dist/T1VolumesFor7z-linux-x64/install.sh dist/T1VolumesFor7z-linux-x64/uninstall.sh
+          cp README.md LICENSE dist/T1VolumesFor7z-linux-x64/
+          tar -czf dist/T1VolumesFor7z-linux-x64.tar.gz -C dist/T1VolumesFor7z-linux-x64 .
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: T1VolumesFor7z-linux-x64
+          path: |
+            dist/T1VolumesFor7z-linux-x64.tar.gz
+            build/TribesVol.so
+
+  release:
+    needs: [ build-windows, build-linux ]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/T1VolumesFor7z-windows.zip
-            build-x64/Release/TribesVol.64.dll
-            build-x86/Release/TribesVol.32.dll
+            artifacts/T1VolumesFor7z-windows.zip
+            artifacts/TribesVol.64.dll
+            artifacts/TribesVol.32.dll
+            artifacts/T1VolumesFor7z-linux-x64.tar.gz
+            artifacts/TribesVol.so

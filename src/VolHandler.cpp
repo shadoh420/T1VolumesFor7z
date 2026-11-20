@@ -247,8 +247,15 @@ STDMETHODIMP VolHandler::GetProperty(UInt32 index, PROPID propID, PROPVARIANT *v
     try {
         const VolEntry &e = arc_.entries[index];
         switch (propID) {
-            case kpidPath:
+            case kpidPath: {
+#ifdef _WIN32
                 return SetPropString(value, e.wideName.c_str());
+#else
+                std::wstring posixPath = e.wideName;
+                std::replace(posixPath.begin(), posixPath.end(), L'\\', L'/');
+                return SetPropString(value, posixPath.c_str());
+#endif
+            }
             case kpidIsDir:
                 return SetPropBool(value, false);
             case kpidSize:

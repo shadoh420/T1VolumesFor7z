@@ -1,13 +1,152 @@
 #pragma once
 
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <cwchar>
+
+#ifdef _WIN32
 #include <windows.h>
 #include <objbase.h>
 #include <oleauto.h>
-#include <cstdint>
-#include <cstring>
+#define TRIBESVOL_NOVTABLE __declspec(novtable)
+#define TRIBESVOL_EXPORT STDAPI
+#else
+// Exact Linux ABI matching 7-Zip's CPP/Common/MyWindows.h, MyWindows.cpp, MyGuidDef.h, and C/7zTypes.h.
+#include <stddef.h>
 
-// Minimal, ABI-exact 7-Zip plugin COM interface definitions (compatible with 7-Zip 9.20 through 24.x+).
-// Derived from 7-Zip's public-domain interface definitions (IArchive.h, IStream.h, IProgress.h, PropID.h).
+#define WINAPI
+#define STDMETHODCALLTYPE
+#define STDAPICALLTYPE
+#define TRIBESVOL_NOVTABLE
+#define TRIBESVOL_EXPORT extern "C" __attribute__((visibility("default"))) HRESULT
+
+using CHAR = char;
+using UCHAR = unsigned char;
+using BYTE = unsigned char;
+using SHORT = int16_t;
+using USHORT = uint16_t;
+using WORD = uint16_t;
+using INT = int32_t;
+using UINT = uint32_t;
+using LONG = int32_t;   // Must be 32-bit for 7-Zip ABI compatibility on LP64 Linux
+using ULONG = uint32_t;
+using DWORD = uint32_t;
+using HRESULT = int32_t;
+using PROPID = uint32_t;
+using VARTYPE = uint16_t;
+using VARIANT_BOOL = int16_t;
+using OLECHAR = wchar_t;
+using BSTR = OLECHAR *;
+
+constexpr VARIANT_BOOL VARIANT_TRUE  = -1;
+constexpr VARIANT_BOOL VARIANT_FALSE = 0;
+
+constexpr HRESULT S_OK                      = static_cast<HRESULT>(0x00000000);
+constexpr HRESULT S_FALSE                   = static_cast<HRESULT>(0x00000001);
+constexpr HRESULT E_NOTIMPL                 = static_cast<HRESULT>(0x80004001u);
+constexpr HRESULT E_NOINTERFACE             = static_cast<HRESULT>(0x80004002u);
+constexpr HRESULT E_POINTER                 = static_cast<HRESULT>(0x80004003u);
+constexpr HRESULT E_ABORT                   = static_cast<HRESULT>(0x80004004u);
+constexpr HRESULT E_FAIL                    = static_cast<HRESULT>(0x80004005u);
+constexpr HRESULT E_OUTOFMEMORY             = static_cast<HRESULT>(0x8007000Eu);
+constexpr HRESULT E_INVALIDARG              = static_cast<HRESULT>(0x80070057u);
+constexpr HRESULT CLASS_E_CLASSNOTAVAILABLE = static_cast<HRESULT>(0x80040111u);
+
+inline bool SUCCEEDED(HRESULT hr) noexcept { return hr >= 0; }
+inline bool FAILED(HRESULT hr) noexcept { return hr < 0; }
+
+struct GUID {
+    uint32_t Data1;
+    uint16_t Data2;
+    uint16_t Data3;
+    uint8_t  Data4[8];
+};
+
+using REFGUID = const GUID &;
+using REFIID  = const GUID &;
+
+inline bool operator==(REFGUID a, REFGUID b) noexcept {
+    return std::memcmp(&a, &b, sizeof(GUID)) == 0;
+}
+inline bool operator!=(REFGUID a, REFGUID b) noexcept {
+    return !(a == b);
+}
+
+inline constexpr GUID IID_IUnknown = {
+    0x00000000u, 0x0000u, 0x0000u,
+    { 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 }
+};
+
+struct LARGE_INTEGER  { int64_t  QuadPart; };
+struct ULARGE_INTEGER { uint64_t QuadPart; };
+struct FILETIME {
+    DWORD dwLowDateTime;
+    DWORD dwHighDateTime;
+};
+
+enum VARENUM : VARTYPE {
+    VT_EMPTY    = 0,
+    VT_NULL     = 1,
+    VT_I2       = 2,
+    VT_I4       = 3,
+    VT_BSTR     = 8,
+    VT_BOOL     = 11,
+    VT_UI1      = 17,
+    VT_UI2      = 18,
+    VT_UI4      = 19,
+    VT_I8       = 20,
+    VT_UI8      = 21,
+    VT_FILETIME = 64
+};
+
+struct PROPVARIANT {
+    VARTYPE vt;
+    WORD wReserved1;
+    WORD wReserved2;
+    WORD wReserved3;
+    union {
+        CHAR cVal;
+        UCHAR bVal;
+        SHORT iVal;
+        USHORT uiVal;
+        LONG lVal;
+        ULONG ulVal;
+        INT intVal;
+        UINT uintVal;
+        LARGE_INTEGER hVal;
+        ULARGE_INTEGER uhVal;
+        VARIANT_BOOL boolVal;
+        LONG scode;
+        FILETIME filetime;
+        BSTR bstrVal;
+    };
+};
+
+enum : uint32_t {
+    STREAM_SEEK_SET = 0,
+    STREAM_SEEK_CUR = 1,
+    STREAM_SEEK_END = 2
+};
+
+#define STDMETHOD(m)      virtual HRESULT m
+#define STDMETHOD_(t, m)  virtual t m
+#define STDMETHODIMP      HRESULT
+#define STDMETHODIMP_(t)  t
+
+struct IUnknown {
+    STDMETHOD(QueryInterface)(REFIID iid, void **outObject) noexcept = 0;
+    STDMETHOD_(ULONG, AddRef)() noexcept = 0;
+    STDMETHOD_(ULONG, Release)() noexcept = 0;
+#ifdef Z7_USE_VIRTUAL_DESTRUCTOR_IN_IUNKNOWN
+    virtual ~IUnknown() noexcept {}
+#endif
+};
+
+#endif // _WIN32
+
+// Minimal, ABI-exact 7-Zip plugin COM interface definitions (compatible with 7-Zip 9.20 through 24.x+
+// on Windows and modular 7-Zip 23+ on Linux).
 
 namespace SevenZip {
 
@@ -179,54 +318,54 @@ namespace NIsArc {
     constexpr UInt32 kNeedMore = 2;
 }
 
-// ---------- COM Interfaces (no virtual destructors on Windows!) ----------
+// ---------- COM Interfaces ----------
 
-struct __declspec(novtable) IProgress : public IUnknown {
+struct TRIBESVOL_NOVTABLE IProgress : public IUnknown {
     STDMETHOD(SetTotal)(UInt64 total) noexcept = 0;
     STDMETHOD(SetCompleted)(const UInt64 *completeValue) noexcept = 0;
 };
 
-struct __declspec(novtable) ISequentialInStream : public IUnknown {
+struct TRIBESVOL_NOVTABLE ISequentialInStream : public IUnknown {
     STDMETHOD(Read)(void *data, UInt32 size, UInt32 *processedSize) noexcept = 0;
 };
 
-struct __declspec(novtable) ISequentialOutStream : public IUnknown {
+struct TRIBESVOL_NOVTABLE ISequentialOutStream : public IUnknown {
     STDMETHOD(Write)(const void *data, UInt32 size, UInt32 *processedSize) noexcept = 0;
 };
 
-struct __declspec(novtable) IInStream : public ISequentialInStream {
+struct TRIBESVOL_NOVTABLE IInStream : public ISequentialInStream {
     STDMETHOD(Seek)(Int64 offset, UInt32 seekOrigin, UInt64 *newPosition) noexcept = 0;
 };
 
-struct __declspec(novtable) IOutStream : public ISequentialOutStream {
+struct TRIBESVOL_NOVTABLE IOutStream : public ISequentialOutStream {
     STDMETHOD(Seek)(Int64 offset, UInt32 seekOrigin, UInt64 *newPosition) noexcept = 0;
     STDMETHOD(SetSize)(UInt64 newSize) noexcept = 0;
 };
 
-struct __declspec(novtable) IStreamGetSize : public IUnknown {
+struct TRIBESVOL_NOVTABLE IStreamGetSize : public IUnknown {
     STDMETHOD(GetSize)(UInt64 *size) noexcept = 0;
 };
 
-struct __declspec(novtable) IStreamSetRestriction : public IUnknown {
+struct TRIBESVOL_NOVTABLE IStreamSetRestriction : public IUnknown {
     STDMETHOD(SetRestriction)(UInt64 begin, UInt64 end) noexcept = 0;
 };
 
-struct __declspec(novtable) IArchiveOpenCallback : public IUnknown {
+struct TRIBESVOL_NOVTABLE IArchiveOpenCallback : public IUnknown {
     STDMETHOD(SetTotal)(const UInt64 *files, const UInt64 *bytes) noexcept = 0;
     STDMETHOD(SetCompleted)(const UInt64 *files, const UInt64 *bytes) noexcept = 0;
 };
 
-struct __declspec(novtable) IArchiveExtractCallback : public IProgress {
+struct TRIBESVOL_NOVTABLE IArchiveExtractCallback : public IProgress {
     STDMETHOD(GetStream)(UInt32 index, ISequentialOutStream **outStream, Int32 askExtractMode) noexcept = 0;
     STDMETHOD(PrepareOperation)(Int32 askExtractMode) noexcept = 0;
     STDMETHOD(SetOperationResult)(Int32 opRes) noexcept = 0;
 };
 
-struct __declspec(novtable) IInArchiveGetStream : public IUnknown {
+struct TRIBESVOL_NOVTABLE IInArchiveGetStream : public IUnknown {
     STDMETHOD(GetStream)(UInt32 index, ISequentialInStream **stream) noexcept = 0;
 };
 
-struct __declspec(novtable) IInArchive : public IUnknown {
+struct TRIBESVOL_NOVTABLE IInArchive : public IUnknown {
     STDMETHOD(Open)(IInStream *stream, const UInt64 *maxCheckStartPosition, IArchiveOpenCallback *openCallback) noexcept = 0;
     STDMETHOD(Close)() noexcept = 0;
     STDMETHOD(GetNumberOfItems)(UInt32 *numItems) noexcept = 0;
@@ -239,24 +378,72 @@ struct __declspec(novtable) IInArchive : public IUnknown {
     STDMETHOD(GetArchivePropertyInfo)(UInt32 index, BSTR *name, PROPID *propID, VARTYPE *varType) noexcept = 0;
 };
 
-struct __declspec(novtable) IArchiveUpdateCallback : public IProgress {
+struct TRIBESVOL_NOVTABLE IArchiveUpdateCallback : public IProgress {
     STDMETHOD(GetUpdateItemInfo)(UInt32 index, Int32 *newData, Int32 *newProps, UInt32 *indexInArchive) noexcept = 0;
     STDMETHOD(GetProperty)(UInt32 index, PROPID propID, PROPVARIANT *value) noexcept = 0;
     STDMETHOD(GetStream)(UInt32 index, ISequentialInStream **inStream) noexcept = 0;
     STDMETHOD(SetOperationResult)(Int32 operationResult) noexcept = 0;
 };
 
-struct __declspec(novtable) IOutArchive : public IUnknown {
+struct TRIBESVOL_NOVTABLE IOutArchive : public IUnknown {
     STDMETHOD(UpdateItems)(ISequentialOutStream *outStream, UInt32 numItems, IArchiveUpdateCallback *updateCallback) noexcept = 0;
     STDMETHOD(GetFileTimeType)(UInt32 *type) noexcept = 0;
 };
 
-struct __declspec(novtable) ISetProperties : public IUnknown {
+struct TRIBESVOL_NOVTABLE ISetProperties : public IUnknown {
     STDMETHOD(SetProperties)(const wchar_t *const *names, const PROPVARIANT *values, UInt32 numProps) noexcept = 0;
 };
 
 // Exported IsArc callback type
 typedef UInt32(WINAPI *Func_IsArc)(const Byte *p, size_t size);
+
+// ---------- Cross-platform BSTR helpers ----------
+
+inline BSTR AllocBstr(const wchar_t *str) noexcept {
+    if (!str) return nullptr;
+#ifdef _WIN32
+    return ::SysAllocString(str);
+#else
+    const size_t len = std::wcslen(str);
+    const uint32_t byteSize = static_cast<uint32_t>(len * sizeof(OLECHAR));
+    void *p = std::malloc(static_cast<size_t>(byteSize) + sizeof(uint32_t) + sizeof(OLECHAR));
+    if (!p) return nullptr;
+    *static_cast<uint32_t *>(p) = byteSize;
+    auto *bstr = reinterpret_cast<BSTR>(static_cast<uint32_t *>(p) + 1);
+    if (byteSize > 0) {
+        std::memcpy(bstr, str, byteSize);
+    }
+    bstr[len] = 0;
+    return bstr;
+#endif
+}
+
+inline BSTR AllocBstrBytes(const void *data, UINT byteLen) noexcept {
+#ifdef _WIN32
+    return ::SysAllocStringByteLen(static_cast<const char *>(data), byteLen);
+#else
+    const uint32_t aligned = (byteLen + static_cast<uint32_t>(sizeof(OLECHAR)) * 2u - 1u)
+                           & ~(static_cast<uint32_t>(sizeof(OLECHAR)) - 1u);
+    void *p = std::malloc(static_cast<size_t>(aligned) + sizeof(uint32_t));
+    if (!p) return nullptr;
+    *static_cast<uint32_t *>(p) = byteLen;
+    auto *bstr = reinterpret_cast<BSTR>(static_cast<uint32_t *>(p) + 1);
+    if (data && byteLen > 0) {
+        std::memcpy(bstr, data, byteLen);
+    }
+    std::memset(reinterpret_cast<uint8_t *>(bstr) + byteLen, 0, aligned - byteLen);
+    return bstr;
+#endif
+}
+
+inline void FreeBstr(BSTR bstr) noexcept {
+    if (!bstr) return;
+#ifdef _WIN32
+    ::SysFreeString(bstr);
+#else
+    std::free(reinterpret_cast<uint32_t *>(bstr) - 1);
+#endif
+}
 
 // ---------- Small RAII helpers ----------
 
@@ -314,7 +501,7 @@ private:
 inline void ClearPropVariant(PROPVARIANT *prop) noexcept {
     if (!prop) return;
     if (prop->vt == VT_BSTR && prop->bstrVal) {
-        ::SysFreeString(prop->bstrVal);
+        FreeBstr(prop->bstrVal);
     }
     std::memset(prop, 0, sizeof(PROPVARIANT));
     prop->vt = VT_EMPTY;
@@ -332,7 +519,7 @@ public:
 inline HRESULT SetPropString(PROPVARIANT *out, const wchar_t *str) noexcept {
     ClearPropVariant(out);
     if (!str) return S_OK;
-    BSTR b = ::SysAllocString(str);
+    BSTR b = AllocBstr(str);
     if (!b) return E_OUTOFMEMORY;
     out->vt = VT_BSTR;
     out->bstrVal = b;
@@ -341,7 +528,7 @@ inline HRESULT SetPropString(PROPVARIANT *out, const wchar_t *str) noexcept {
 
 inline HRESULT SetPropBinary(PROPVARIANT *out, const void *data, UINT byteLen) noexcept {
     ClearPropVariant(out);
-    BSTR b = ::SysAllocStringByteLen(static_cast<const char *>(data), byteLen);
+    BSTR b = AllocBstrBytes(data, byteLen);
     if (!b) return E_OUTOFMEMORY;
     out->vt = VT_BSTR;
     out->bstrVal = b;

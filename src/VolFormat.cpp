@@ -17,23 +17,47 @@ inline bool TagEquals(const uint8_t *p, const char tag[4]) noexcept {
     return std::memcmp(p, tag, 4) == 0;
 }
 
+// Unicode code points for Windows-1252 bytes 0x80..0x9F.
+constexpr uint16_t kCp1252High[32] = {
+    0x20AC, 0x0081, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+    0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008D, 0x017D, 0x008F,
+    0x0090, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+    0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x009D, 0x017E, 0x0178
+};
+
 } // namespace
 
 std::wstring Cp1252ToWide(const std::string &s) {
-    if (s.empty()) return {};
-    const int needed = ::MultiByteToWideChar(1252, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
-    if (needed <= 0) return {};
-    std::wstring out(static_cast<size_t>(needed), L'\0');
-    ::MultiByteToWideChar(1252, 0, s.data(), static_cast<int>(s.size()), out.data(), needed);
+    std::wstring out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        if (c >= 0x80u && c <= 0x9Fu) {
+            out.push_back(static_cast<wchar_t>(kCp1252High[c - 0x80u]));
+        } else {
+            out.push_back(static_cast<wchar_t>(c));
+        }
+    }
     return out;
 }
 
 std::string WideToCp1252(const std::wstring &s) {
-    if (s.empty()) return {};
-    const int needed = ::WideCharToMultiByte(1252, 0, s.data(), static_cast<int>(s.size()), nullptr, 0, nullptr, nullptr);
-    if (needed <= 0) return {};
-    std::string out(static_cast<size_t>(needed), '\0');
-    ::WideCharToMultiByte(1252, 0, s.data(), static_cast<int>(s.size()), out.data(), needed, nullptr, nullptr);
+    std::string out;
+    out.reserve(s.size());
+    for (wchar_t wc : s) {
+        const uint32_t cp = static_cast<uint32_t>(wc);
+        if (cp < 0x80u || (cp >= 0xA0u && cp <= 0xFFu)) {
+            out.push_back(static_cast<char>(cp));
+            continue;
+        }
+        char mapped = '?';
+        for (uint32_t i = 0; i < 32; ++i) {
+            if (kCp1252High[i] == cp) {
+                mapped = static_cast<char>(0x80u + i);
+                break;
+            }
+        }
+        out.push_back(mapped);
+    }
     return out;
 }
 

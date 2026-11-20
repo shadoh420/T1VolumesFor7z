@@ -1,7 +1,10 @@
 """End-to-end test suite for T1VolumesFor7z using a sandboxed 7-Zip installation.
 
+Works on both Windows (7z.exe + 7z.dll) and Linux (modular 7z + 7z.so).
+
 Usage:
     python tests/test_plugin.py --dll build-x64/Release/TribesVol.64.dll
+    python3 tests/test_plugin.py --dll build/TribesVol.so
 """
 import argparse
 import hashlib
@@ -230,29 +233,50 @@ def verify_extract_matches_ref(exe: Path, vol_path: Path, tmp: Path) -> int:
     )
     for name, (exp_bytes, _comp) in expected.items():
         key = name.replace("/", "\\").lower()
-        assert key in extracted_files, f"{vol_path.name}: missing {name!r}"
+        assert key in extracted_files, f"{vol_path.name}: missing {name!r} (got {list(extracted_files)})"
         assert sha256(extracted_files[key]) == sha256(exp_bytes), f"{vol_path.name}: hash mismatch for {name!r}"
     return len(expected)
 
 
+def detect_sevenzip_dir(explicit: Path | None) -> Path:
+    if explicit:
+        return explicit
+    if os.name == "nt":
+        return Path(r"C:\Program Files\7-Zip")
+    for candidate in (
+        Path("/usr/lib/7zip"),
+        Path("/usr/libexec/7zip"),
+        Path("/usr/lib64/7zip"),
+        Path("/usr/local/lib/7zip"),
+    ):
+        if (candidate / "7z").is_file() and (candidate / "7z.so").is_file():
+            return candidate
+    raise FileNotFoundError("Could not find modular 7-Zip (7z + 7z.so). Pass --sevenzip-dir.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dll", type=Path, required=True)
-    parser.add_argument("--sevenzip-dir", type=Path, default=Path(r"C:\Program Files\7-Zip"))
+    parser.add_argument("--dll", type=Path, required=True, help="Path to TribesVol DLL/.so plugin")
+    parser.add_argument("--sevenzip-dir", type=Path, default=None)
     args = parser.parse_args()
 
     dll_path = args.dll.resolve()
-    assert dll_path.is_file(), f"DLL not found: {dll_path}"
-    assert (args.sevenzip_dir / "7z.exe").is_file(), f"7z.exe not found in {args.sevenzip_dir}"
+    assert dll_path.is_file(), f"Plugin binary not found: {dll_path}"
+    sevenzip_dir = detect_sevenzip_dir(args.sevenzip_dir)
+
+    exe_name = "7z.exe" if os.name == "nt" else "7z"
+    lib_name = "7z.dll" if os.name == "nt" else "7z.so"
+    assert (sevenzip_dir / exe_name).is_file(), f"{exe_name} not found in {sevenzip_dir}"
+    assert (sevenzip_dir / lib_name).is_file(), f"{lib_name} not found in {sevenzip_dir}"
 
     with tempfile.TemporaryDirectory(prefix="t1vol_test_") as td:
         root = Path(td)
         sandbox = root / "7z"
         (sandbox / "Formats").mkdir(parents=True)
-        shutil.copy2(args.sevenzip_dir / "7z.exe", sandbox / "7z.exe")
-        shutil.copy2(args.sevenzip_dir / "7z.dll", sandbox / "7z.dll")
+        shutil.copy2(sevenzip_dir / exe_name, sandbox / exe_name)
+        shutil.copy2(sevenzip_dir / lib_name, sandbox / lib_name)
         shutil.copy2(dll_path, sandbox / "Formats" / dll_path.name)
-        exe = sandbox / "7z.exe"
+        exe = sandbox / exe_name
 
         # 1. Registration check
         info = run_7z(exe, ["i"]).stdout
@@ -270,8 +294,8 @@ def main() -> int:
             r"textures\disc.bmp": bytes(range(256)) * 64,
             r"scripts\sub\autoexec.cs": b'echo("Ready");\n' * 200,
         }
-        for rel, content in files_in.items():
-            p = src / rel
+        for rel_win, content in files_in.items():
+            p = src.joinpath(*rel_win.split("\\"))
             p.write_bytes(content)
 
         created_vol = root / "created.vol"
@@ -279,10 +303,10 @@ def main() -> int:
         magic, parsed = ref_read_vol(created_vol)
         assert magic == b"PVOL"
         assert len(parsed) == len(files_in)
-        for rel, content in files_in.items():
-            assert rel in parsed, f"Missing {rel!r} in {list(parsed)}"
-            assert parsed[rel][0] == content
-            assert parsed[rel][1] == 0  # Default Store
+        for rel_win, content in files_in.items():
+            assert rel_win in parsed, f"Missing {rel_win!r} in {list(parsed)}"
+            assert parsed[rel_win][0] == content
+            assert parsed[rel_win][1] == 0  # Default Store
         verify_extract_matches_ref(exe, created_vol, root)
         print("[PASS] 2. Create new PVOL archive (subdirs, empty file, binary) + Python/7z round-trip")
 
@@ -322,7 +346,8 @@ def main() -> int:
         run_7z(exe, ["u", str(mod_vol), "readme.txt"], cwd=extra)
 
         run_7z(exe, ["d", str(mod_vol), "empty.dat"])
-        run_7z(exe, ["rn", str(mod_vol), "added.txt", r"renamed\moved.txt"])
+        renamed_arg = "renamed" + os.sep + "moved.txt"
+        run_7z(exe, ["rn", str(mod_vol), "added.txt", renamed_arg])
 
         _, parsed_mod = ref_read_vol(mod_vol)
         assert "empty.dat" not in parsed_mod
@@ -363,40 +388,41 @@ def main() -> int:
         print("[PASS] 8. Corrupt/truncated PVOL rejected cleanly without crash")
 
         # 9. Real Tribes 1 & Starsiege volumes (if installed on this machine)
-        real_samples = [
-            Path(r"C:\Dynamix\TribesRPG\base\gui.vol"),
-            Path(r"C:\Dynamix\TribesRPG\base\Darkstar.vol"),
-            Path(r"C:\Dynamix\TribesRPG\base\Die_Efficiently.vol"),
-            Path(r"C:\Dynamix\Starsiege\scripts.vol"),
-            Path(r"C:\Dynamix\Starsiege\campaign\Cybrid (Advanced)\CA1.ted.vol"),
-        ]
-        tested_real = 0
-        for sample in real_samples:
-            if sample.is_file():
-                n = verify_extract_matches_ref(exe, sample, root)
-                print(f"[PASS] 9.{tested_real + 1} Real volume {sample.name}: {n} files matched byte-for-byte")
-                tested_real += 1
+        if os.name == "nt":
+            real_samples = [
+                Path(r"C:\Dynamix\TribesRPG\base\gui.vol"),
+                Path(r"C:\Dynamix\TribesRPG\base\Darkstar.vol"),
+                Path(r"C:\Dynamix\TribesRPG\base\Die_Efficiently.vol"),
+                Path(r"C:\Dynamix\Starsiege\scripts.vol"),
+                Path(r"C:\Dynamix\Starsiege\campaign\Cybrid (Advanced)\CA1.ted.vol"),
+            ]
+            tested_real = 0
+            for sample in real_samples:
+                if sample.is_file():
+                    n = verify_extract_matches_ref(exe, sample, root)
+                    print(f"[PASS] 9.{tested_real + 1} Real volume {sample.name}: {n} files matched byte-for-byte")
+                    tested_real += 1
 
-        # 10. Modify a copy of real Starsiege LZH scripts.vol -> verify untouched LZH entries preserved!
-        ss_scripts = Path(r"C:\Dynamix\Starsiege\scripts.vol")
-        if ss_scripts.is_file():
-            ss_copy = root / "scripts_mod.vol"
-            shutil.copy2(ss_scripts, ss_copy)
-            run_7z(exe, ["a", str(ss_copy), "added.txt"], cwd=extra)
-            run_7z(exe, ["d", str(ss_copy), "console.cs"])
-            magic_ss, parsed_ss = ref_read_vol(ss_copy)
-            assert magic_ss == b" VOL", "Expected Starsiege ' VOL' header preserved on update"
-            assert "console.cs" not in parsed_ss
-            assert parsed_ss["added.txt"] == (b"Brand new file in volume", 0)
-            assert parsed_ss["actionTable.cs"][1] == 3, "Untouched LZH item should stay LZH-compressed!"
-            verify_extract_matches_ref(exe, ss_copy, root)
-            print("[PASS] 10. Modifying Starsiege LZH volume preserves ' VOL' header & untouched LZH blocks")
+            # 10. Modify a copy of real Starsiege LZH scripts.vol -> verify untouched LZH entries preserved!
+            ss_scripts = Path(r"C:\Dynamix\Starsiege\scripts.vol")
+            if ss_scripts.is_file():
+                ss_copy = root / "scripts_mod.vol"
+                shutil.copy2(ss_scripts, ss_copy)
+                run_7z(exe, ["a", str(ss_copy), "added.txt"], cwd=extra)
+                run_7z(exe, ["d", str(ss_copy), "console.cs"])
+                magic_ss, parsed_ss = ref_read_vol(ss_copy)
+                assert magic_ss == b" VOL", "Expected Starsiege ' VOL' header preserved on update"
+                assert "console.cs" not in parsed_ss
+                assert parsed_ss["added.txt"] == (b"Brand new file in volume", 0)
+                assert parsed_ss["actionTable.cs"][1] == 3, "Untouched LZH item should stay LZH-compressed!"
+                verify_extract_matches_ref(exe, ss_copy, root)
+                print("[PASS] 10. Modifying Starsiege LZH volume preserves ' VOL' header & untouched LZH blocks")
 
-        # 11. Large real Tribes 1 volume stress test (Entities.vol - 970 files, 12 MB)
-        entities = Path(r"C:\Dynamix\TribesRPG\base\Entities.vol")
-        if entities.is_file():
-            run_7z(exe, ["t", str(entities)])
-            print("[PASS] 11. Stress test Entities.vol (970 files, 12 MB) passed `7z t`")
+            # 11. Large real Tribes 1 volume stress test (Entities.vol - 970 files, 12 MB)
+            entities = Path(r"C:\Dynamix\TribesRPG\base\Entities.vol")
+            if entities.is_file():
+                run_7z(exe, ["t", str(entities)])
+                print("[PASS] 11. Stress test Entities.vol (970 files, 12 MB) passed `7z t`")
 
         print("\nALL TESTS PASSED!")
     return 0

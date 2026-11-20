@@ -1,6 +1,6 @@
 # T1VolumesFor7z
 
-This plugin lets 7-Zip open, extract, create, and change Starsiege: Tribes (Tribes 1) and Starsiege `.vol` archives.
+This plugin lets 7-Zip open, extract, create, and change Starsiege: Tribes (Tribes 1) and Starsiege `.vol` archives on Windows and Linux.
 
 ## Supported Formats
 
@@ -10,12 +10,12 @@ This plugin lets 7-Zip open, extract, create, and change Starsiege: Tribes (Trib
 
 ## Requirements
 
-- Windows (64-bit or 32-bit)
-- Official 7-Zip (`7z.exe`, `7zG.exe`, or `7zFM.exe`)
+- **Windows:** Official 7-Zip (64-bit or 32-bit). The DLL uses a static C runtime and needs no Visual C++ Redistributable.
+- **Linux:** Modular 7-Zip v23 or newer (`7z` with `7z.so`, from distro packages such as `apt install 7zip`, `dnf install 7zip`, or `pacman -S 7zip`).
 
-This plugin uses a static C runtime. You do not need to install the Visual C++ Redistributable.
+> **NOTE:** On Linux, this plugin does not work with the standalone `7zz` binary because `7zz` does not load external plugins.
 
-## Install the Plugin
+## Install on Windows
 
 ### Automatic Install
 
@@ -41,47 +41,55 @@ This plugin uses a static C runtime. You do not need to install the Visual C++ R
 
 > **NOTE:** Do not put both `TribesVol.64.dll` and `TribesVol.32.dll` in the same `Formats` folder. 7-Zip shows a load warning for the DLL that does not match its architecture.
 
-To verify the installation, run this command:
+## Install on Linux
 
-```powershell
-7z i | Select-String TribesVol
+1. Install modular 7-Zip (`sudo apt install 7zip`, `sudo dnf install 7zip`, or `sudo pacman -S 7zip`).
+2. Download `T1VolumesFor7z-linux-x64.tar.gz` from the Releases page.
+3. Extract the archive to a folder.
+4. Run the install script:
+
+```bash
+sudo ./install.sh
+```
+
+As an alternative, copy `TribesVol.so` into the `Formats` folder next to `7z.so` (usually `/usr/lib/7zip/Formats/` or `/usr/libexec/7zip/Formats/`).
+
+To verify the installation on either OS, run:
+
+```bash
+7z i | grep TribesVol          # Linux
+7z i | Select-String TribesVol # Windows PowerShell
 ```
 
 ## Remove the Plugin
 
-1. Open PowerShell as Administrator.
-2. Run `.\uninstall.ps1`.
-
-As an alternative, delete `TribesVol.*.dll` from the 7-Zip `Formats` folder.
+- **Windows:** Open PowerShell as Administrator and run `.\uninstall.ps1`, or delete `TribesVol.*.dll` from the 7-Zip `Formats` folder.
+- **Linux:** Run `sudo ./uninstall.sh`, or delete `TribesVol.so` from the 7-Zip `Formats` folder.
 
 ## Command-Line Examples
 
-```powershell
-# List files in a volume
+```bash
+# List, test, or extract a volume
 7z l Entities.vol
-
-# Test a volume
 7z t Entities.vol
-
-# Extract a volume
 7z x gui.vol -oextracted_gui
 
-# Create a volume (Store compression)
-7z a mymod.vol .\assets\*
+# Create a volume (Store compression, default)
+7z a mymod.vol ./assets/*
 
 # Create a volume with RLE compression
-7z a -m0=RLE mymod_rle.vol .\assets\*
+7z a -m0=RLE mymod_rle.vol ./assets/*
 
 # Add, update, delete, or rename files in a volume
 7z a mymod.vol newskin.bmp
 7z u mymod.vol updated.dts
 7z d mymod.vol obsolete.bmp
-7z rn mymod.vol old.bmp skins\new.bmp
+7z rn mymod.vol old.bmp skins/new.bmp
 ```
 
 ## Build and Test
 
-Install Visual Studio 2022 with C++ tools and CMake 3.20 or newer. Then run these commands:
+### Windows
 
 ```powershell
 cmake -S . -B build-x64 -A x64
@@ -92,3 +100,14 @@ cmake --build build-x86 --config Release
 
 python tests/test_plugin.py --dll build-x64/Release/TribesVol.64.dll
 ```
+
+### Linux
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+
+python3 tests/test_plugin.py --dll build/TribesVol.so
+```
+
+To build for legacy `p7zip` (older than 7-Zip v23), add `-DTRIBESVOL_LEGACY_P7ZIP=ON` to the CMake configure command.
